@@ -2,42 +2,42 @@ package godb
 
 import (
 	"errors"
-	log "github.com/kordar/gologger"
+	"github.com/kordar/gologger"
 	"sync"
 )
 
 var instanceOfDbPool *DbConnPool
 var onceOfDb sync.Once
 
-type DBItem interface {
+type DbItem interface {
 	GetName() string
 	GetInstance() interface{}
 	Close() error
 }
 
 type DbConnPool struct {
-	handle map[string]DBItem
+	handle map[string]DbItem
 }
 
 func GetDbPool() *DbConnPool {
 	onceOfDb.Do(func() {
-		instanceOfDbPool = &DbConnPool{handle: make(map[string]DBItem)}
+		instanceOfDbPool = &DbConnPool{handle: make(map[string]DbItem)}
 	})
 	return instanceOfDbPool
 }
 
 // InitDataPool /*
 // 初始化数据库连接(可在mail()适当位置调用)
-func (m *DbConnPool) InitDataPool(items ...DBItem) (issucc bool) {
+func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
 	for _, item := range items {
 		if m.handle[item.GetName()] != nil {
-			log.Errorf("[godb] 实例[%s]已存在", item.GetName())
+			logger.Errorf("[godb] 实例[%s]已存在", item.GetName())
 			continue
 		}
 		var err error
 		err = m.Add(item)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 			return false
 		}
 	}
@@ -48,9 +48,9 @@ func (m *DbConnPool) InitDataPool(items ...DBItem) (issucc bool) {
 }
 
 // Add 添加数据库实例
-func (m *DbConnPool) Add(db DBItem) error {
+func (m *DbConnPool) Add(db DbItem) error {
 	if m.handle[db.GetName()] != nil {
-		return errors.New("MySQL实例已存在")
+		return errors.New("数据库实例已存在")
 	}
 	m.handle[db.GetName()] = db
 	return nil
@@ -62,7 +62,7 @@ func (m *DbConnPool) Remove(name string) {
 		defer delete(m.handle, name)
 		g := m.handle[name]
 		if err := g.Close(); err != nil {
-			log.Errorf("[godb] 移除句柄=%v", err)
+			logger.Errorf("[godb] 移除句柄=%v", err)
 		}
 	}
 }
@@ -70,5 +70,14 @@ func (m *DbConnPool) Remove(name string) {
 // Handle /*
 // 对外获取数据库连接对象db
 func (m *DbConnPool) Handle(name string) (conn interface{}) {
-	return m.handle[name].GetInstance()
+	if m.Has(name) {
+		return m.handle[name].GetInstance()
+	}
+	return nil
+}
+
+// Has 是否存在
+func (m *DbConnPool) Has(name string) bool {
+	item := m.handle[name]
+	return item != nil
 }
