@@ -26,6 +26,10 @@ func GetDbPool() *DbConnPool {
 	return instanceOfDbPool
 }
 
+func NewDbPool() *DbConnPool {
+	return &DbConnPool{handle: make(map[string]DbItem)}
+}
+
 // InitDataPool /*
 // 初始化数据库连接(可在mail()适当位置调用)
 func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
