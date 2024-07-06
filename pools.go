@@ -35,7 +35,7 @@ func NewDbPool() *DbConnPool {
 func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
 	for _, item := range items {
 		if m.handle[item.GetName()] != nil {
-			logger.Errorf("[godb] 实例[%s]已存在", item.GetName())
+			logger.Errorf("[godb] the db-%s already exists", item.GetName())
 			continue
 		}
 		var err error
@@ -54,7 +54,7 @@ func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
 // Add 添加数据库实例
 func (m *DbConnPool) Add(db DbItem) error {
 	if m.handle[db.GetName()] != nil {
-		return errors.New("数据库实例已存在")
+		return errors.New("[godb] the db already exists")
 	}
 	m.handle[db.GetName()] = db
 	return nil
@@ -66,7 +66,7 @@ func (m *DbConnPool) Remove(name string) {
 		defer delete(m.handle, name)
 		g := m.handle[name]
 		if err := g.Close(); err != nil {
-			logger.Errorf("[godb] 移除句柄=%v", err)
+			logger.Errorf("[godb] remove db err，%v", err)
 		}
 	}
 }
