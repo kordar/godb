@@ -17,20 +17,27 @@ type DbItem interface {
 
 type DbConnPool struct {
 	handle map[string]DbItem
+	locker sync.RWMutex
 }
 
 func GetDbPool() *DbConnPool {
 	onceOfDb.Do(func() {
-		instanceOfDbPool = &DbConnPool{handle: make(map[string]DbItem)}
+		instanceOfDbPool = &DbConnPool{
+			handle: make(map[string]DbItem),
+			locker: sync.RWMutex{},
+		}
 	})
 	return instanceOfDbPool
 }
 
 func NewDbPool() *DbConnPool {
-	return &DbConnPool{handle: make(map[string]DbItem)}
+	return &DbConnPool{
+		handle: make(map[string]DbItem),
+		locker: sync.RWMutex{},
+	}
 }
 
-// InitDataPool /*
+// InitDataPool
 // 初始化数据库连接(可在mail()适当位置调用)
 func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
 	for _, item := range items {
@@ -53,6 +60,8 @@ func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
 
 // Add 添加数据库实例
 func (m *DbConnPool) Add(db DbItem) error {
+	m.locker.Lock()
+	defer m.locker.Unlock()
 	if m.handle[db.GetName()] != nil {
 		return errors.New("[godb] the db already exists")
 	}
@@ -62,6 +71,8 @@ func (m *DbConnPool) Add(db DbItem) error {
 
 // Remove 移除句柄
 func (m *DbConnPool) Remove(name string) {
+	m.locker.Lock()
+	defer m.locker.Unlock()
 	if m.handle[name] != nil {
 		defer delete(m.handle, name)
 		g := m.handle[name]
@@ -74,6 +85,8 @@ func (m *DbConnPool) Remove(name string) {
 // Handle /*
 // 对外获取数据库连接对象db
 func (m *DbConnPool) Handle(name string) (conn interface{}) {
+	m.locker.RLocker()
+	defer m.locker.RUnlock()
 	if m.Has(name) {
 		return m.handle[name].GetInstance()
 	}
@@ -82,6 +95,8 @@ func (m *DbConnPool) Handle(name string) (conn interface{}) {
 
 // Has 是否存在
 func (m *DbConnPool) Has(name string) bool {
+	m.locker.RLocker()
+	defer m.locker.RUnlock()
 	item := m.handle[name]
 	return item != nil
 }
