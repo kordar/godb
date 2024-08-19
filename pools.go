@@ -6,9 +6,6 @@ import (
 	"sync"
 )
 
-var instanceOfDbPool *DbConnPool
-var onceOfDb sync.Once
-
 type DbItem interface {
 	GetName() string
 	GetInstance() interface{}
@@ -18,16 +15,6 @@ type DbItem interface {
 type DbConnPool struct {
 	handle map[string]DbItem
 	locker sync.RWMutex
-}
-
-func GetDbPool() *DbConnPool {
-	onceOfDb.Do(func() {
-		instanceOfDbPool = &DbConnPool{
-			handle: make(map[string]DbItem),
-			locker: sync.RWMutex{},
-		}
-	})
-	return instanceOfDbPool
 }
 
 func NewDbPool() *DbConnPool {
@@ -58,7 +45,7 @@ func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
 	return true
 }
 
-// Add 添加数据库实例
+// Add 添加句柄实例
 func (m *DbConnPool) Add(db DbItem) error {
 	m.locker.Lock()
 	defer m.locker.Unlock()
@@ -82,20 +69,19 @@ func (m *DbConnPool) Remove(name string) {
 	}
 }
 
-// Handle /*
-// 对外获取数据库连接对象db
+// Handle 对外获取数据库连接对象db
 func (m *DbConnPool) Handle(name string) (conn interface{}) {
-	m.locker.RLocker()
-	defer m.locker.RUnlock()
-	if m.Has(name) {
+	exists := m.Has(name)
+	if exists {
 		return m.handle[name].GetInstance()
+	} else {
+		return nil
 	}
-	return nil
 }
 
-// Has 是否存在
+// Has 是否存在句柄
 func (m *DbConnPool) Has(name string) bool {
-	m.locker.RLocker()
+	m.locker.RLock()
 	defer m.locker.RUnlock()
 	item := m.handle[name]
 	return item != nil
