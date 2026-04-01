@@ -1,8 +1,9 @@
 package godb_test
 
 import (
+	"bytes"
 	"github.com/kordar/godb"
-	logger "github.com/kordar/gologger"
+	"log/slog"
 	"testing"
 )
 
@@ -10,23 +11,30 @@ type TestItem struct {
 }
 
 func (t TestItem) GetName() string {
-	//TODO implement me
 	return "test"
 }
 
 func (t TestItem) GetInstance() interface{} {
-	//TODO implement me
 	return "AAAA"
 }
 
 func (t TestItem) Close() error {
-	//TODO implement me
 	return nil
 }
 
 func TestName(t *testing.T) {
+	var buf bytes.Buffer
+	godb.SetLogger(slog.New(slog.NewTextHandler(&buf, nil)))
+
 	mysqlpool := godb.NewDbPool()
-	mysqlpool.Add(TestItem{})
+	if err := mysqlpool.Add(TestItem{}); err != nil {
+		t.Fatalf("add failed: %v", err)
+	}
 	conn := mysqlpool.Handle("test")
-	logger.Infof("-------%v", conn)
+	if conn == nil {
+		t.Fatalf("expected conn not nil")
+	}
+	if conn.(string) != "AAAA" {
+		t.Fatalf("unexpected conn: %v", conn)
+	}
 }

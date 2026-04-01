@@ -2,9 +2,12 @@ package godb
 
 import (
 	"errors"
-	"github.com/kordar/gologger"
+	"fmt"
+	"log/slog"
 	"sync"
 )
+
+var poolLogger = slog.Default()
 
 type DbItem interface {
 	GetName() string
@@ -24,65 +27,102 @@ func NewDbPool() *DbConnPool {
 	}
 }
 
-// InitDataPool
-// 初始化数据库连接(可在mail()适当位置调用)
-func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
-	for _, item := range items {
-		if m.handle[item.GetName()] != nil {
-			logger.Errorf("[godb] the db-%s already exists", item.GetName())
-			continue
-		}
-		var err error
-		err = m.Add(item)
-		if err != nil {
-			logger.Fatal(err)
-			return false
-		}
+func SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		poolLogger = logger
 	}
+}
 
-	// 关闭数据库，db会被多个goroutine共享，可以不调用
-	// defer db.Close()
+func (m *DbConnPool) InitDataPool(items ...DbItem) (issucc bool) {
+	if err := m.InitDataPoolE(items...); err != nil {
+		poolLogger.Error("[godb] init data pool failed", slog.Any("err", err))
+		return false
+	}
 	return true
 }
 
-// Add 添加句柄实例
-func (m *DbConnPool) Add(db DbItem) error {
-	m.locker.Lock()
-	defer m.locker.Unlock()
-	if m.handle[db.GetName()] != nil {
-		return errors.New("[godb] the db already exists")
+func (m *DbConnPool) InitDataPoolE(items ...DbItem) error {
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if _, ok := m.Item(item.GetName()); ok {
+			poolLogger.Warn("[godb] db already exists", slog.String("name", item.GetName()))
+			continue
+		}
+		if err := m.Add(item); err != nil {
+			return err
+		}
 	}
-	m.handle[db.GetName()] = db
 	return nil
 }
 
-// Remove 移除句柄
-func (m *DbConnPool) Remove(name string) {
+func (m *DbConnPool) Add(db DbItem) error {
+	if db == nil {
+		return errors.New("[godb] db item is nil")
+	}
+	name := db.GetName()
+	if name == "" {
+		return errors.New("[godb] db name is empty")
+	}
+
 	m.locker.Lock()
 	defer m.locker.Unlock()
 	if m.handle[name] != nil {
-		defer delete(m.handle, name)
-		g := m.handle[name]
-		if err := g.Close(); err != nil {
-			logger.Errorf("[godb] remove db err，%v", err)
-		}
+		return errors.New("[godb] the db already exists")
+	}
+	m.handle[name] = db
+	return nil
+}
+
+func (m *DbConnPool) Remove(name string) {
+	m.locker.Lock()
+	item := m.handle[name]
+	delete(m.handle, name)
+	m.locker.Unlock()
+
+	if item == nil {
+		return
+	}
+	if err := item.Close(); err != nil {
+		poolLogger.Error("[godb] remove db failed", slog.String("name", name), slog.Any("err", err))
 	}
 }
 
-// Handle 对外获取数据库连接对象db
-func (m *DbConnPool) Handle(name string) (conn interface{}) {
-	exists := m.Has(name)
-	if exists {
-		return m.handle[name].GetInstance()
-	} else {
+func (m *DbConnPool) RemoveE(name string) error {
+	m.locker.Lock()
+	item := m.handle[name]
+	delete(m.handle, name)
+	m.locker.Unlock()
+
+	if item == nil {
 		return nil
 	}
+	if err := item.Close(); err != nil {
+		return fmt.Errorf("[godb] remove db %s failed: %w", name, err)
+	}
+	return nil
 }
 
-// Has 是否存在句柄
+func (m *DbConnPool) Handle(name string) (conn interface{}) {
+	item, exists := m.Item(name)
+	if !exists {
+		return nil
+	}
+	return item.GetInstance()
+}
+
 func (m *DbConnPool) Has(name string) bool {
+	_, ok := m.Item(name)
+	return ok
+}
+
+func (m *DbConnPool) Item(name string) (DbItem, bool) {
 	m.locker.RLock()
 	defer m.locker.RUnlock()
-	item := m.handle[name]
-	return item != nil
+	item, ok := m.handle[name]
+	if !ok || item == nil {
+		return nil, false
+	}
+	return item, true
 }
